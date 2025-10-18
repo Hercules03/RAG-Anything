@@ -78,3 +78,8 @@ memory-bank/
 .claude/
 .cursor/
 CLAUDE.md
+
+# document files
+pdfs/
+rag_files/
+output/

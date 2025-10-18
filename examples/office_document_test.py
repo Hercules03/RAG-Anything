@@ -23,13 +23,16 @@ from raganything import RAGAnything
 def check_libreoffice_installation():
     """Check if LibreOffice is installed and available"""
     import subprocess
+    import os
+    import platform
 
+    # First try the standard commands
     for cmd in ["libreoffice", "soffice"]:
         try:
             result = subprocess.run(
                 [cmd, "--version"], capture_output=True, check=True, timeout=10
             )
-            print(f"✅ LibreOffice found: {result.stdout.decode().strip()}")
+            print(f"[SUCCESS] LibreOffice found: {result.stdout.decode().strip()}")
             return True
         except (
             subprocess.CalledProcessError,
@@ -38,7 +41,30 @@ def check_libreoffice_installation():
         ):
             continue
 
-    print("❌ LibreOffice not found. Please install LibreOffice:")
+    # On Windows, also check common installation paths
+    if platform.system() == "Windows":
+        windows_paths = [
+            r"C:\Program Files\LibreOffice\program\soffice.exe",
+            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+        ]
+        
+        for path in windows_paths:
+            if os.path.exists(path):
+                try:
+                    result = subprocess.run(
+                        [path, "--version"], capture_output=True, check=True, timeout=10
+                    )
+                    print(f"[SUCCESS] LibreOffice found at: {path}")
+                    print(f"[SUCCESS] Version: {result.stdout.decode().strip()}")
+                    return True
+                except (
+                    subprocess.CalledProcessError,
+                    FileNotFoundError,
+                    subprocess.TimeoutExpired,
+                ):
+                    continue
+
+    print("[ERROR] LibreOffice not found. Please install LibreOffice:")
     print("  - Windows: Download from https://www.libreoffice.org/download/download/")
     print("  - macOS: brew install --cask libreoffice")
     print("  - Ubuntu/Debian: sudo apt-get install libreoffice")
@@ -155,6 +181,19 @@ async def test_office_document_parsing(file_path: str):
 
 def main():
     """Main function"""
+    # Set up console encoding for Windows
+    import sys
+    import os
+    if sys.platform.startswith('win'):
+        # Set environment variable for UTF-8 output
+        os.environ['PYTHONIOENCODING'] = 'utf-8'
+        # Try to set console code page to UTF-8
+        try:
+            import subprocess
+            subprocess.run(['chcp', '65001'], shell=True, capture_output=True)
+        except:
+            pass
+    
     parser = argparse.ArgumentParser(
         description="Test Office document parsing with MinerU"
     )
@@ -168,18 +207,18 @@ def main():
     args = parser.parse_args()
 
     # Check LibreOffice installation
-    print("🔧 Checking LibreOffice installation...")
+    print("[INFO] Checking LibreOffice installation...")
     if not check_libreoffice_installation():
         return 1
 
     if args.check_libreoffice:
-        print("✅ LibreOffice installation check passed!")
+        print("[SUCCESS] LibreOffice installation check passed!")
         return 0
 
     # If not just checking dependencies, file argument is required
     if not args.file:
         print(
-            "❌ Error: --file argument is required when not using --check-libreoffice"
+            "[ERROR] Error: --file argument is required when not using --check-libreoffice"
         )
         parser.print_help()
         return 1
@@ -189,10 +228,10 @@ def main():
         success = asyncio.run(test_office_document_parsing(args.file))
         return 0 if success else 1
     except KeyboardInterrupt:
-        print("\n⏹️ Test interrupted by user")
+        print("\n[INFO] Test interrupted by user")
         return 1
     except Exception as e:
-        print(f"\n❌ Unexpected error: {str(e)}")
+        print(f"\n[ERROR] Unexpected error: {str(e)}")
         return 1
 
 

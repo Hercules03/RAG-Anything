@@ -18,6 +18,7 @@ import base64
 import subprocess
 import tempfile
 import logging
+import os
 from pathlib import Path
 from typing import (
     Dict,
@@ -105,6 +106,17 @@ class Parser:
 
                 # Try LibreOffice commands in order of preference
                 commands_to_try = ["libreoffice", "soffice"]
+                
+                # On Windows, also try common installation paths
+                if platform.system() == "Windows":
+                    windows_paths = [
+                        r"C:\Program Files\LibreOffice\program\soffice.exe",
+                        r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+                    ]
+                    # Add Windows paths to the list if they exist
+                    for path in windows_paths:
+                        if os.path.exists(path):
+                            commands_to_try.append(path)
 
                 conversion_successful = False
                 for cmd in commands_to_try:

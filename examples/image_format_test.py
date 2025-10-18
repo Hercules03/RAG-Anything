@@ -26,11 +26,11 @@ def check_pillow_installation():
         from PIL import Image
 
         print(
-            f"✅ PIL/Pillow found: PIL version {Image.__version__ if hasattr(Image, '__version__') else 'Unknown'}"
+            f"[SUCCESS] PIL/Pillow found: PIL version {Image.__version__ if hasattr(Image, '__version__') else 'Unknown'}"
         )
         return True
     except ImportError:
-        print("❌ PIL/Pillow not found. Please install Pillow:")
+        print("[ERROR] PIL/Pillow not found. Please install Pillow:")
         print("  pip install Pillow")
         return False
 
@@ -55,12 +55,12 @@ def get_image_info(image_path: Path):
 async def test_image_format_parsing(file_path: str):
     """Test image format parsing with MinerU"""
 
-    print(f"🧪 Testing image format parsing: {file_path}")
+    print(f"[TEST] Testing image format parsing: {file_path}")
 
     # Check if file exists and is a supported image format
     file_path = Path(file_path)
     if not file_path.exists():
-        print(f"❌ File does not exist: {file_path}")
+        print(f"[ERROR] File does not exist: {file_path}")
         return False
 
     supported_extensions = {
@@ -74,17 +74,17 @@ async def test_image_format_parsing(file_path: str):
         ".webp",
     }
     if file_path.suffix.lower() not in supported_extensions:
-        print(f"❌ Unsupported file format: {file_path.suffix}")
+        print(f"[ERROR] Unsupported file format: {file_path.suffix}")
         print(f"   Supported formats: {', '.join(supported_extensions)}")
         return False
 
-    print(f"📸 File format: {file_path.suffix.upper()}")
-    print(f"📏 File size: {file_path.stat().st_size / 1024:.1f} KB")
+    print(f"[INFO] File format: {file_path.suffix.upper()}")
+    print(f"[INFO] File size: {file_path.stat().st_size / 1024:.1f} KB")
 
     # Get detailed image information
     img_info = get_image_info(file_path)
     if "error" not in img_info:
-        print("🖼️  Image info:")
+        print("[INFO] Image info:")
         print(f"   • Format: {img_info['format']}")
         print(f"   • Mode: {img_info['mode']}")
         print(f"   • Size: {img_info['size'][0]}x{img_info['size'][1]}")
@@ -96,10 +96,10 @@ async def test_image_format_parsing(file_path: str):
 
     if needs_conversion:
         print(
-            f"ℹ️  Format {file_path.suffix.upper()} will be converted to PNG for MinerU compatibility"
+            f"[INFO] Format {file_path.suffix.upper()} will be converted to PNG for MinerU compatibility"
         )
     else:
-        print(f"✅ Format {file_path.suffix.upper()} is natively supported by MinerU")
+        print(f"[SUCCESS] Format {file_path.suffix.upper()} is natively supported by MinerU")
 
     # Initialize RAGAnything (only for parsing functionality)
     rag = RAGAnything()
@@ -193,6 +193,19 @@ async def test_image_format_parsing(file_path: str):
 
 def main():
     """Main function"""
+    # Set up console encoding for Windows
+    import sys
+    import os
+    if sys.platform.startswith('win'):
+        # Set environment variable for UTF-8 output
+        os.environ['PYTHONIOENCODING'] = 'utf-8'
+        # Try to set console code page to UTF-8
+        try:
+            import subprocess
+            subprocess.run(['chcp', '65001'], shell=True, capture_output=True)
+        except:
+            pass
+    
     parser = argparse.ArgumentParser(
         description="Test image format parsing with MinerU"
     )
@@ -204,12 +217,12 @@ def main():
     args = parser.parse_args()
 
     # Check PIL/Pillow installation
-    print("🔧 Checking PIL/Pillow installation...")
+    print("[INFO] Checking PIL/Pillow installation...")
     if not check_pillow_installation():
         return 1
 
     if args.check_pillow:
-        print("✅ PIL/Pillow installation check passed!")
+        print("[SUCCESS] PIL/Pillow installation check passed!")
         return 0
 
     # If not just checking dependencies, file argument is required
