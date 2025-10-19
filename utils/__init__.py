@@ -14,6 +14,7 @@ from .late_chunking import LateChunkingStrategies
 from .regulation_extractor import RegulationExtractor
 from .metadata_store import MetadataStore
 from .db_manager import DocumentDatabase
+from .async_helpers import run_async, run_async_safe
 
 __all__ = [
     "ChunkManager",
@@ -21,4 +22,6 @@ __all__ = [
     "RegulationExtractor",
     "MetadataStore",
     "DocumentDatabase",
+    "run_async",
+    "run_async_safe",
 ]

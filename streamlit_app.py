@@ -25,7 +25,8 @@ from utils import (
     LateChunkingStrategies,
     RegulationExtractor,
     MetadataStore,
-    DocumentDatabase
+    DocumentDatabase,
+    run_async
 )
 
 # Page configuration
@@ -260,7 +261,7 @@ def render_sidebar():
                     st.success(f"✅ Ollama connected: v{response.json()['version']}")
 
                     # Initialize RAG
-                    st.session_state.rag = asyncio.run(
+                    st.session_state.rag = run_async(
                         initialize_rag(ollama_model, embedding_model, ollama_host, working_dir)
                     )
 
@@ -367,7 +368,7 @@ def render_tab1_upload():
                         os.makedirs(output_dir, exist_ok=True)
 
                         # Process document
-                        extracted_reg_id = asyncio.run(
+                        extracted_reg_id = run_async(
                             process_single_document(
                                 st.session_state.rag,
                                 tmp_path,
@@ -418,7 +419,7 @@ def render_tab1_upload():
                             output_dir = "./output"
                             os.makedirs(output_dir, exist_ok=True)
 
-                            asyncio.run(
+                            run_async(
                                 process_single_document(
                                     st.session_state.rag,
                                     str(pdf_file),
@@ -459,12 +460,12 @@ def render_tab2_database():
     # Get documents
     try:
         if status_filter == "All":
-            documents = asyncio.run(db_manager.list_documents(query=search_query))
+            documents = run_async(db_manager.list_documents(query=search_query))
         else:
-            documents = asyncio.run(db_manager.list_documents(query=search_query, status=status_filter))
+            documents = run_async(db_manager.list_documents(query=search_query, status=status_filter))
 
         # Display statistics
-        stats = asyncio.run(db_manager.get_statistics())
+        stats = run_async(db_manager.get_statistics())
 
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -506,7 +507,7 @@ def render_tab2_database():
                             if st.button("🔄 Re-process", key=f"reprocess_{doc['doc_id']}"):
                                 with st.spinner("Re-processing..."):
                                     try:
-                                        success = asyncio.run(
+                                        success = run_async(
                                             db_manager.reprocess_document(
                                                 doc['doc_id'],
                                                 chunking_strategy="default"
@@ -522,7 +523,7 @@ def render_tab2_database():
                             if st.button("🗑️ Delete", key=f"delete_{doc['doc_id']}"):
                                 with st.spinner("Deleting..."):
                                     try:
-                                        success = asyncio.run(
+                                        success = run_async(
                                             db_manager.delete_document(doc['doc_id'])
                                         )
                                         if success:
@@ -543,7 +544,7 @@ def render_tab2_database():
             if st.button("🔄 Sync with LightRAG"):
                 with st.spinner("Syncing..."):
                     try:
-                        results = asyncio.run(db_manager.sync_with_lightrag())
+                        results = run_async(db_manager.sync_with_lightrag())
                         st.success("✅ Sync complete!")
                         st.json(results)
                     except Exception as e:
@@ -553,7 +554,7 @@ def render_tab2_database():
             if st.button("📊 Validate Database"):
                 with st.spinner("Validating..."):
                     try:
-                        validation = asyncio.run(db_manager.validate_database())
+                        validation = run_async(db_manager.validate_database())
                         if validation["is_valid"]:
                             st.success("✅ Database is valid!")
                         else:
@@ -597,9 +598,9 @@ def render_tab3_chunks():
 
     # Get chunks and statistics
     try:
-        chunks = asyncio.run(chunk_manager.get_chunks_by_doc_id(doc_id))
-        stats = asyncio.run(chunk_manager.get_chunk_statistics(doc_id))
-        validation = asyncio.run(chunk_manager.validate_chunks(doc_id))
+        chunks = run_async(chunk_manager.get_chunks_by_doc_id(doc_id))
+        stats = run_async(chunk_manager.get_chunk_statistics(doc_id))
+        validation = run_async(chunk_manager.validate_chunks(doc_id))
 
         # Display statistics
         st.subheader("📊 Chunk Statistics")
@@ -636,7 +637,7 @@ def render_tab3_chunks():
 
         search_text = st.text_input("Search for text within chunks")
         if search_text:
-            matches = asyncio.run(
+            matches = run_async(
                 chunk_manager.search_in_chunks(doc_id, search_text)
             )
             st.info(f"Found {len(matches)} matching chunks")
@@ -661,7 +662,7 @@ def render_tab3_chunks():
         st.divider()
         if st.button("📥 Export Chunks to Text"):
             export_path = f"./chunks_{doc_id}.txt"
-            success = asyncio.run(
+            success = run_async(
                 chunk_manager.export_chunks_to_text(doc_id, export_path)
             )
             if success:
@@ -695,7 +696,7 @@ def render_tab4_chat():
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 try:
-                    response = asyncio.run(
+                    response = run_async(
                         st.session_state.rag.aquery(prompt, mode="hybrid")
                     )
 
