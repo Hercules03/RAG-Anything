@@ -227,7 +227,7 @@ def render_sidebar():
 
         ollama_model = st.text_input(
             "LLM Model",
-            value="gpt-oss:20b",
+            value="gemma3:27b",
             help="Ollama model for text generation"
         )
 
@@ -394,7 +394,7 @@ def render_tab1_upload():
     else:
         folder_path = st.text_input(
             "Folder Path",
-            value="./documents",
+            value="./pdfs",
             help="Path to folder containing PDF files"
         )
 
