@@ -11,6 +11,10 @@ import tempfile
 from pathlib import Path
 import sys
 from typing import List, Dict, Any
+from dotenv import load_dotenv
+
+# Load .env before anything else (matches LightRAG pattern)
+load_dotenv(dotenv_path=".env", override=False)
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -22,7 +26,7 @@ from lightrag.utils import EmbeddingFunc
 # Import utility modules
 from utils import (
     ChunkManager,
-    LateChunkingStrategies,
+    ChunkingStrategies,
     RegulationExtractor,
     MetadataStore,
     DocumentDatabase,
@@ -149,13 +153,15 @@ async def process_single_document(
                     text_content += item.get("text", "") + "\n"
 
             # Apply custom chunking
-            chunker = LateChunkingStrategies()
+            from lightrag.utils import compute_mdhash_id
+            chunker = ChunkingStrategies()  # Fixed class name
             chunks = chunker.apply_strategy(
                 text_content,
                 strategy=chunking_strategy,
                 chunk_size=chunk_size,
                 **chunking_kwargs
             )
+            # chunks is now List[Dict[str, Any]] matching TextChunkSchema format
 
             # Delete old chunks and insert new ones
             all_chunk_keys = await rag.lightrag.text_chunks.get_all_keys()
@@ -164,12 +170,11 @@ async def process_single_document(
                 if chunk_data and chunk_data.get("full_doc_id") == doc_id:
                     await rag.lightrag.text_chunks.delete_by_id(key)
 
-            # Insert custom chunks
-            await rag.lightrag.ainsert_custom_chunks(
-                full_text=text_content,
-                text_chunks=chunks,
-                doc_id=doc_id
-            )
+            # Insert custom chunks with proper format
+            for chunk in chunks:
+                chunk["full_doc_id"] = doc_id  # Add document ID
+                chunk_id = compute_mdhash_id(chunk["content"], prefix="chunk-")
+                await rag.lightrag.text_chunks.upsert(chunk_id, chunk)
 
     # Update metadata
     # Get page count from metadata
@@ -309,28 +314,85 @@ def render_tab1_upload():
     with col1:
         chunking_strategy = st.selectbox(
             "Strategy",
-            ["default", "fixed_token", "paragraph", "hybrid"],
-            help="Chunking method to use"
+            ["default", "fixed_token", "paragraph", "hybrid", "hierarchical"],
+            help="Chunking method to use. Hierarchical is best for structured documents with headings."
         )
 
     with col2:
+        # Get default from .env
+        default_chunk_size = int(os.getenv("CHUNK_SIZE", "1200"))
         chunk_size = st.number_input(
             "Chunk Size (tokens)",
             min_value=100,
             max_value=4000,
-            value=1200,
+            value=default_chunk_size,
             step=100,
-            help="Target chunk size in tokens"
+            help=f"Target chunk size in tokens (default from .env: {default_chunk_size})"
         )
 
-    # Additional parameters
+    # Additional parameters based on strategy
     if chunking_strategy == "fixed_token":
-        overlap = st.slider("Overlap (tokens)", 0, 500, 100)
+        default_overlap = int(os.getenv("CHUNK_OVERLAP_SIZE", "100"))
+        overlap = st.slider(
+            "Overlap (tokens)",
+            0,
+            500,
+            default_overlap,
+            help=f"Overlapping tokens between chunks (default from .env: {default_overlap})"
+        )
         chunking_kwargs = {"overlap": overlap}
+
     elif chunking_strategy == "paragraph":
-        min_tokens = st.number_input("Min Tokens", 100, 2000, 500)
-        max_tokens = st.number_input("Max Tokens", 500, 3000, 1500)
+        min_tokens = st.number_input("Min Tokens", 100, 2000, default_chunk_size // 2)
+        max_tokens = st.number_input("Max Tokens", 500, 3000, int(default_chunk_size * 1.5))
         chunking_kwargs = {"min_tokens": min_tokens, "max_tokens": max_tokens}
+
+    elif chunking_strategy == "hierarchical":
+        st.info("📊 Hierarchical chunking creates parent-child relationships (10-15% better for structured docs)")
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            default_parent = int(os.getenv("PARENT_CHUNK_SIZE", "1500"))
+            parent_chunk_size = st.number_input(
+                "Parent Chunk Size (tokens)",
+                min_value=500,
+                max_value=4000,
+                value=default_parent,
+                step=100,
+                help=f"Large contextual units (default from .env: {default_parent})"
+            )
+
+        with col_b:
+            default_child_overlap = int(os.getenv("CHUNK_OVERLAP_SIZE", "100"))
+            child_overlap = st.number_input(
+                "Child Overlap (tokens)",
+                min_value=0,
+                max_value=200,
+                value=default_child_overlap,
+                step=10,
+                help=f"Overlap for child chunks (default from .env: {default_child_overlap})"
+            )
+
+        extract_sections = st.checkbox(
+            "Extract Sections",
+            value=True,
+            help="Detect document structure (headings, numbered sections). Recommended for structured docs."
+        )
+
+        use_intermediate = st.checkbox(
+            "Use Intermediate Level",
+            value=False,
+            help="Enable 3-level hierarchy (parent → intermediate → child). More granular but more complex."
+        )
+
+        chunking_kwargs = {
+            "parent_chunk_size": parent_chunk_size,
+            "child_chunk_size": chunk_size,  # Use main chunk_size as child size
+            "child_overlap": child_overlap,
+            "extract_sections": extract_sections,
+            "use_intermediate_level": use_intermediate
+        }
+
     else:
         chunking_kwargs = {}
 
@@ -735,6 +797,338 @@ def render_tab4_chat():
             st.rerun()
 
 
+def render_tab5_chunking_test():
+    """Tab 5: Chunking Method Testing"""
+    st.header("🧪 Chunking Method Tester")
+    st.markdown("Upload a PDF and test different chunking strategies to see how they split your document.")
+
+    # PDF Upload
+    st.subheader("1️⃣ Upload Test Document")
+    uploaded_file = st.file_uploader(
+        "Choose a PDF file to test chunking",
+        type=["pdf"],
+        help="Upload any PDF to see how different chunking strategies work",
+        key="chunking_test_uploader"
+    )
+
+    if not uploaded_file:
+        st.info("👆 Upload a PDF file to start testing chunking methods")
+        return
+
+    # Chunking Strategy Selection
+    st.subheader("2️⃣ Select Chunking Strategy")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        strategy = st.selectbox(
+            "Chunking Strategy",
+            ["fixed_token", "paragraph", "hybrid", "hierarchical"],
+            help="Select the chunking method to test"
+        )
+
+    with col2:
+        # Get default from .env
+        default_chunk_size = int(os.getenv("CHUNK_SIZE", "1200"))
+        chunk_size = st.number_input(
+            "Chunk Size (tokens)",
+            min_value=100,
+            max_value=4000,
+            value=default_chunk_size,
+            step=100,
+            help="Target chunk size in tokens"
+        )
+
+    # Strategy-specific parameters
+    st.subheader("3️⃣ Configure Parameters")
+
+    chunking_kwargs = {}
+
+    if strategy == "fixed_token":
+        col_a, col_b = st.columns(2)
+        with col_a:
+            overlap = st.slider(
+                "Overlap (tokens)",
+                0,
+                500,
+                int(os.getenv("CHUNK_OVERLAP_SIZE", "100")),
+                help="Overlapping tokens between chunks"
+            )
+            chunking_kwargs["overlap"] = overlap
+        with col_b:
+            split_sentences = st.checkbox(
+                "Split on Sentences",
+                value=True,
+                help="Try to split on sentence boundaries"
+            )
+            chunking_kwargs["split_sentences"] = split_sentences
+
+    elif strategy == "paragraph":
+        col_a, col_b = st.columns(2)
+        with col_a:
+            min_tokens = st.number_input(
+                "Min Tokens",
+                100,
+                2000,
+                default_chunk_size // 2,
+                help="Minimum tokens per chunk"
+            )
+            chunking_kwargs["min_tokens"] = min_tokens
+        with col_b:
+            max_tokens = st.number_input(
+                "Max Tokens",
+                500,
+                3000,
+                int(default_chunk_size * 1.5),
+                help="Maximum tokens per chunk"
+            )
+            chunking_kwargs["max_tokens"] = max_tokens
+
+    elif strategy == "hybrid":
+        hybrid_strategy = st.selectbox(
+            "Hybrid Strategy",
+            ["balanced", "paragraph-first", "semantic-first"],
+            help="Sub-strategy for hybrid approach"
+        )
+        chunking_kwargs["hybrid_strategy"] = hybrid_strategy
+
+    elif strategy == "hierarchical":
+        st.info("📊 Hierarchical chunking creates parent-child relationships")
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            parent_chunk_size = st.number_input(
+                "Parent Chunk Size",
+                500,
+                4000,
+                int(os.getenv("PARENT_CHUNK_SIZE", "1500")),
+                step=100,
+                help="Large contextual units"
+            )
+            chunking_kwargs["parent_chunk_size"] = parent_chunk_size
+
+        with col_b:
+            child_overlap = st.number_input(
+                "Child Overlap",
+                0,
+                200,
+                int(os.getenv("CHUNK_OVERLAP_SIZE", "100")),
+                step=10,
+                help="Overlap for child chunks"
+            )
+            chunking_kwargs["child_overlap"] = child_overlap
+
+        col_c, col_d = st.columns(2)
+        with col_c:
+            extract_sections = st.checkbox(
+                "Extract Sections",
+                value=True,
+                help="Detect document structure"
+            )
+            chunking_kwargs["extract_sections"] = extract_sections
+
+        with col_d:
+            use_intermediate = st.checkbox(
+                "3-Level Hierarchy",
+                value=False,
+                help="Enable intermediate level"
+            )
+            chunking_kwargs["use_intermediate_level"] = use_intermediate
+
+    st.divider()
+
+    # Chunk Button
+    if st.button("🔬 Chunk Document", type="primary", use_container_width=True):
+        with st.spinner(f"Processing with {strategy} strategy..."):
+            try:
+                # Save uploaded file temporarily
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+                    tmp_file.write(uploaded_file.read())
+                    tmp_path = tmp_file.name
+
+                # Parse PDF
+                st.info("📖 Parsing PDF...")
+                from raganything import RAGAnything, RAGAnythingConfig
+
+                config = RAGAnythingConfig(
+                    working_dir=tempfile.mkdtemp(),
+                    parser=os.getenv("PARSER", "mineru"),
+                    parse_method=os.getenv("PARSE_METHOD", "auto"),
+                )
+
+                temp_rag = RAGAnything(config=config)
+                parsed_result = run_async(temp_rag.parse_document(tmp_path))
+                text_content = parsed_result["text"]
+
+                # Clean up temp file
+                os.unlink(tmp_path)
+
+                if not text_content or not text_content.strip():
+                    st.error("❌ No text extracted from PDF")
+                    return
+
+                st.success(f"✅ Extracted {len(text_content)} characters")
+
+                # Apply chunking strategy
+                st.info(f"✂️ Chunking with {strategy} strategy...")
+                chunker = ChunkingStrategies()
+
+                chunks = chunker.apply_strategy(
+                    text_content,
+                    strategy=strategy,
+                    chunk_size=chunk_size,
+                    **chunking_kwargs
+                )
+
+                st.success(f"✅ Created {len(chunks)} chunks")
+
+                # Store in session state for display
+                st.session_state.test_chunks = chunks
+                st.session_state.test_strategy = strategy
+                st.session_state.test_text_length = len(text_content)
+
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
+
+    # Display Results
+    if "test_chunks" in st.session_state and st.session_state.test_chunks:
+        st.divider()
+        st.subheader("📊 Chunking Results")
+
+        chunks = st.session_state.test_chunks
+        strategy_used = st.session_state.test_strategy
+        text_length = st.session_state.test_text_length
+
+        # Statistics
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric("Total Chunks", len(chunks))
+
+        with col2:
+            avg_tokens = sum(c["tokens"] for c in chunks) / len(chunks)
+            st.metric("Avg Tokens/Chunk", f"{avg_tokens:.0f}")
+
+        with col3:
+            total_tokens = sum(c["tokens"] for c in chunks)
+            st.metric("Total Tokens", total_tokens)
+
+        with col4:
+            st.metric("Source Characters", f"{text_length:,}")
+
+        # Hierarchical-specific stats
+        if strategy_used == "hierarchical":
+            st.markdown("**Hierarchical Structure:**")
+            col_a, col_b, col_c = st.columns(3)
+
+            parents = [c for c in chunks if c.get("level") == 0]
+            children = [c for c in chunks if c.get("level") in [1, 2]]
+
+            with col_a:
+                st.metric("Parent Chunks", len(parents))
+            with col_b:
+                st.metric("Child Chunks", len(children))
+            with col_c:
+                avg_children = len(children) / len(parents) if parents else 0
+                st.metric("Avg Children/Parent", f"{avg_children:.1f}")
+
+        st.divider()
+
+        # Chunk Display Options
+        st.subheader("🔍 Browse Chunks")
+
+        col_view, col_filter = st.columns([2, 1])
+
+        with col_view:
+            view_mode = st.radio(
+                "View Mode",
+                ["Compact", "Detailed", "Metadata Only"],
+                horizontal=True
+            )
+
+        with col_filter:
+            if strategy_used == "hierarchical":
+                level_filter = st.selectbox(
+                    "Filter by Level",
+                    ["All", "Parents Only", "Children Only"]
+                )
+            else:
+                level_filter = "All"
+
+        # Filter chunks
+        display_chunks = chunks
+        if level_filter == "Parents Only":
+            display_chunks = [c for c in chunks if c.get("level") == 0]
+        elif level_filter == "Children Only":
+            display_chunks = [c for c in chunks if c.get("level") in [1, 2]]
+
+        # Display chunks
+        st.markdown(f"**Showing {len(display_chunks)} chunks:**")
+
+        for i, chunk in enumerate(display_chunks):
+            with st.expander(
+                f"Chunk {chunk['chunk_order_index']} "
+                f"({chunk['tokens']} tokens)"
+                f"{' - ' + chunk.get('section_title', '') if chunk.get('section_title') else ''}"
+            ):
+                if view_mode == "Detailed":
+                    # Show full content
+                    st.markdown("**Content:**")
+                    st.text_area(
+                        "Chunk Content",
+                        chunk["content"],
+                        height=200,
+                        key=f"chunk_content_{i}",
+                        label_visibility="collapsed"
+                    )
+
+                    # Show metadata
+                    st.markdown("**Metadata:**")
+                    col_m1, col_m2, col_m3 = st.columns(3)
+                    with col_m1:
+                        st.write(f"🔢 Tokens: {chunk['tokens']}")
+                        st.write(f"📍 Index: {chunk['chunk_order_index']}")
+                    with col_m2:
+                        if strategy_used == "hierarchical":
+                            st.write(f"📊 Level: {chunk.get('level', 'N/A')}")
+                            st.write(f"🔗 Parent: {chunk.get('parent_id', 'None')}")
+                    with col_m3:
+                        if strategy_used == "hierarchical":
+                            st.write(f"👶 Children: {len(chunk.get('children_ids', []))}")
+                            st.write(f"📑 Section: {chunk.get('section_title', 'None')}")
+
+                elif view_mode == "Compact":
+                    # Show preview only
+                    preview = chunk["content"][:300] + "..." if len(chunk["content"]) > 300 else chunk["content"]
+                    st.markdown(f"```\n{preview}\n```")
+
+                    if strategy_used == "hierarchical":
+                        st.caption(
+                            f"Level: {chunk.get('level')} | "
+                            f"Parent: {chunk.get('parent_id', 'None')} | "
+                            f"Children: {len(chunk.get('children_ids', []))}"
+                        )
+
+                else:  # Metadata Only
+                    col_meta1, col_meta2 = st.columns(2)
+                    with col_meta1:
+                        st.json({
+                            "tokens": chunk["tokens"],
+                            "chunk_order_index": chunk["chunk_order_index"],
+                            "content_length": len(chunk["content"])
+                        })
+                    with col_meta2:
+                        if strategy_used == "hierarchical":
+                            st.json({
+                                "level": chunk.get("level"),
+                                "parent_id": chunk.get("parent_id"),
+                                "children_count": len(chunk.get("children_ids", [])),
+                                "section_title": chunk.get("section_title")
+                            })
+
+
 def main():
     st.title("📚 RAG-Anything Document Manager")
     st.markdown("Manage building regulations, view chunks, and chat with your documents")
@@ -743,11 +1137,12 @@ def main():
     working_dir, output_dir = render_sidebar()
 
     # Create tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📄 Upload",
         "🗄️ Database",
         "🔍 Chunks",
-        "💬 Chat"
+        "💬 Chat",
+        "🧪 Chunking Test"
     ])
 
     with tab1:
@@ -761,6 +1156,9 @@ def main():
 
     with tab4:
         render_tab4_chat()
+
+    with tab5:
+        render_tab5_chunking_test()
 
 
 if __name__ == "__main__":

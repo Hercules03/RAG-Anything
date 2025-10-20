@@ -14,7 +14,7 @@ from pathlib import Path
 
 from .metadata_store import MetadataStore
 from .regulation_extractor import RegulationExtractor
-from .late_chunking import LateChunkingStrategies
+from .chunking_strategies import ChunkingStrategies
 
 
 class DocumentDatabase:
@@ -32,7 +32,7 @@ class DocumentDatabase:
         self.lightrag = rag_instance.lightrag
         self.metadata = metadata_store
         self.reg_extractor = RegulationExtractor()
-        self.chunker = LateChunkingStrategies()
+        self.chunker = ChunkingStrategies()
 
     async def list_documents(
         self, query: str = "", status: Optional[str] = None

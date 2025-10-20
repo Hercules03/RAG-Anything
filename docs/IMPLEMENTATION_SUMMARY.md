@@ -12,7 +12,7 @@ RAG-Anything/
 ├── utils/                        # New utility modules
 │   ├── __init__.py
 │   ├── chunk_manager.py          # Chunk viewing and validation
-│   ├── late_chunking.py          # Custom chunking strategies
+│   ├── chunking_strategies.py   # Pre-embedding chunking strategies
 │   ├── regulation_extractor.py   # Regulation ID extraction
 │   ├── metadata_store.py         # Document metadata management
 │   └── db_manager.py             # Document CRUD operations
@@ -87,7 +87,7 @@ RAG-Anything/
 - Search within chunks
 - Export chunks to text file for inspection
 
-**Late Chunking Support:**
+**Custom Chunking Support:**
 - View chunks created with custom strategies
 - Compare different chunking approaches
 - Validate chunk quality before production use
@@ -124,7 +124,7 @@ RAG-Anything/
 
 **Use Case**: Validate chunking behavior and debug retrieval issues
 
-#### 2. `utils/late_chunking.py`
+#### 2. `utils/chunking_strategies.py`
 
 **Purpose**: Provide custom chunking strategies for advanced RAG
 
@@ -364,7 +364,7 @@ You now have a complete document management system with:
 - ✅ **4-tab interface** for upload, database, chunks, and chat
 - ✅ **Persistent metadata storage** for ~200 PDFs
 - ✅ **Automatic regulation ID extraction** (APP-1, APP-2 patterns)
-- ✅ **Custom chunking strategies** for late chunking workflows
+- ✅ **Custom chunking strategies** for pre-embedding text processing
 - ✅ **Chunk viewing and validation** for quality assurance
 - ✅ **Enhanced chatbot** with regulation citations
 - ✅ **CRUD operations** for document management
