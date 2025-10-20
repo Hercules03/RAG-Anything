@@ -56,11 +56,10 @@ class DocumentDatabase:
 
             # Check if document has chunks in LightRAG
             try:
-                # Get all chunk keys and filter by doc_id
-                all_chunk_keys = await self.lightrag.text_chunks.get_all_keys()
+                # Get all chunks and filter by doc_id
+                all_chunks_dict = await self.lightrag.text_chunks.get_all()
                 doc_chunks = []
-                for key in all_chunk_keys:
-                    chunk_data = await self.lightrag.text_chunks.get_by_id(key)
+                for key, chunk_data in all_chunks_dict.items():
                     if chunk_data and chunk_data.get("full_doc_id") == doc_id:
                         doc_chunks.append(chunk_data)
 
@@ -144,9 +143,8 @@ class DocumentDatabase:
         if delete_from_lightrag:
             try:
                 # Delete chunks
-                all_chunk_keys = await self.lightrag.text_chunks.get_all_keys()
-                for key in all_chunk_keys:
-                    chunk_data = await self.lightrag.text_chunks.get_by_id(key)
+                all_chunks_dict = await self.lightrag.text_chunks.get_all()
+                for key, chunk_data in all_chunks_dict.items():
                     if chunk_data and chunk_data.get("full_doc_id") == doc_id:
                         await self.lightrag.text_chunks.delete_by_id(key)
 
@@ -230,9 +228,8 @@ class DocumentDatabase:
 
         try:
             # Delete old chunks
-            all_chunk_keys = await self.lightrag.text_chunks.get_all_keys()
-            for key in all_chunk_keys:
-                chunk_data = await self.lightrag.text_chunks.get_by_id(key)
+            all_chunks_dict = await self.lightrag.text_chunks.get_all()
+            for key, chunk_data in all_chunks_dict.items():
                 if chunk_data and chunk_data.get("full_doc_id") == doc_id:
                     await self.lightrag.text_chunks.delete_by_id(key)
 
@@ -345,18 +342,17 @@ class DocumentDatabase:
         # Get LightRAG storage statistics
         try:
             # Count chunks in LightRAG (no doc_status attribute in LightRAG)
-            all_chunks = await self.lightrag.text_chunks.get_all_keys()
+            all_chunks_dict = await self.lightrag.text_chunks.get_all()
 
             # Count unique documents from chunks
             unique_doc_ids = set()
-            for chunk_key in all_chunks:
-                chunk_data = await self.lightrag.text_chunks.get_by_id(chunk_key)
+            for chunk_key, chunk_data in all_chunks_dict.items():
                 if chunk_data and chunk_data.get("full_doc_id"):
                     unique_doc_ids.add(chunk_data["full_doc_id"])
 
             lightrag_stats = {
                 "total_docs_in_lightrag": len(unique_doc_ids),
-                "total_chunks_in_lightrag": len(all_chunks),
+                "total_chunks_in_lightrag": len(all_chunks_dict),
             }
         except Exception:
             lightrag_stats = {
@@ -426,10 +422,9 @@ class DocumentDatabase:
 
         # Get all documents from LightRAG (by scanning chunks)
         try:
-            all_chunk_keys = await self.lightrag.text_chunks.get_all_keys()
+            all_chunks_dict = await self.lightrag.text_chunks.get_all()
             lightrag_docs = set()
-            for key in all_chunk_keys:
-                chunk_data = await self.lightrag.text_chunks.get_by_id(key)
+            for key, chunk_data in all_chunks_dict.items():
                 if chunk_data and chunk_data.get("full_doc_id"):
                     lightrag_docs.add(chunk_data["full_doc_id"])
         except Exception:

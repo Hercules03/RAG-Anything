@@ -47,11 +47,10 @@ class ChunkManager:
 
         # Get all chunks from storage
         # Note: LightRAG uses hash-based keys, so we need to scan all
-        all_chunk_keys = await self.lightrag.text_chunks.get_all_keys()
+        all_chunks_dict = await self.lightrag.text_chunks.get_all()
 
         chunks = []
-        for key in all_chunk_keys:
-            chunk_data = await self.lightrag.text_chunks.get_by_id(key)
+        for key, chunk_data in all_chunks_dict.items():
             if chunk_data and chunk_data.get("full_doc_id") == doc_id:
                 chunks.append({
                     "key": key,

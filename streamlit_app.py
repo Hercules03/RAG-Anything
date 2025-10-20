@@ -164,9 +164,8 @@ async def process_single_document(
             # chunks is now List[Dict[str, Any]] matching TextChunkSchema format
 
             # Delete old chunks and insert new ones
-            all_chunk_keys = await rag.lightrag.text_chunks.get_all_keys()
-            for key in all_chunk_keys:
-                chunk_data = await rag.lightrag.text_chunks.get_by_id(key)
+            all_chunks_dict = await rag.lightrag.text_chunks.get_all()
+            for key, chunk_data in all_chunks_dict.items():
                 if chunk_data and chunk_data.get("full_doc_id") == doc_id:
                     await rag.lightrag.text_chunks.delete_by_id(key)
 

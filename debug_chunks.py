@@ -47,7 +47,8 @@ async def check_chunks():
     # Get all chunk keys
     print("\n1. Checking text_chunks storage...")
     try:
-        all_chunk_keys = await rag.lightrag.text_chunks.get_all_keys()
+        all_chunks_dict = await rag.lightrag.text_chunks.get_all()
+        all_chunk_keys = list(all_chunks_dict.keys())
         print(f"   ✅ Found {len(all_chunk_keys)} total chunk keys")
 
         if len(all_chunk_keys) > 0:
@@ -91,7 +92,8 @@ async def check_chunks():
     # Check full_docs
     print(f"\n4. Checking full_docs storage...")
     try:
-        all_doc_keys = await rag.lightrag.full_docs.get_all_keys()
+        all_docs_dict = await rag.lightrag.full_docs.get_all()
+        all_doc_keys = list(all_docs_dict.keys())
         print(f"   ✅ Found {len(all_doc_keys)} documents in full_docs")
 
         if len(all_doc_keys) > 0:
