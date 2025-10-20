@@ -655,14 +655,36 @@ def render_tab3_chunks():
     selected_doc = st.selectbox("Select Document", list(doc_options.keys()))
     doc_id = doc_options[selected_doc]
 
-    # DEBUG: Show what doc_id we're querying
-    st.info(f"🔍 DEBUG: Querying chunks for doc_id: `{doc_id}`")
-
     st.divider()
 
     # Get chunks and statistics
     try:
         chunks = run_async(chunk_manager.get_chunks_by_doc_id(doc_id))
+
+        # Display debug information
+        if hasattr(chunk_manager, '_last_debug_info'):
+            debug_info = chunk_manager._last_debug_info
+
+            st.warning("🔍 **DEBUG INFORMATION**")
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Queried Doc ID", debug_info.get("queried_doc_id", "N/A"))
+            with col2:
+                st.metric("Total Chunks in Storage", debug_info.get("total_chunks_in_storage", 0))
+            with col3:
+                st.metric("Chunks Found", debug_info.get("found_chunks_count", 0))
+
+            st.write("**Sample of Stored Doc IDs (first 10):**")
+            sample_ids = debug_info.get("sample_stored_doc_ids", [])
+            if sample_ids:
+                for sample_id in sample_ids:
+                    st.code(sample_id)
+            else:
+                st.write("No doc IDs found in storage")
+
+            st.divider()
+
         stats = run_async(chunk_manager.get_chunk_statistics(doc_id))
         validation = run_async(chunk_manager.validate_chunks(doc_id))
 

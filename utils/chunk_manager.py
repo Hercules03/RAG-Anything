@@ -49,21 +49,21 @@ class ChunkManager:
         # Note: LightRAG uses hash-based keys, so we need to scan all
         all_chunks_dict = await self.lightrag.text_chunks.get_all()
 
-        # DEBUG: Log what we're searching for
-        print(f"\n{'='*70}")
-        print(f"DEBUG [get_chunks_by_doc_id]: Searching for doc_id: '{doc_id}'")
-        print(f"DEBUG [get_chunks_by_doc_id]: Total chunks in storage: {len(all_chunks_dict)}")
+        # Collect debug info to return
+        debug_info = {
+            "queried_doc_id": doc_id,
+            "total_chunks_in_storage": len(all_chunks_dict),
+            "sample_stored_doc_ids": []
+        }
 
-        # DEBUG: Show sample of stored doc_ids (first 10 unique)
+        # Get sample of stored doc_ids (first 10 unique)
         stored_doc_ids = set()
         for key, chunk_data in all_chunks_dict.items():
             if chunk_data and chunk_data.get("full_doc_id"):
                 stored_doc_ids.add(chunk_data.get("full_doc_id"))
                 if len(stored_doc_ids) >= 10:
                     break
-        print(f"DEBUG [get_chunks_by_doc_id]: Sample stored doc_ids (up to 10):")
-        for sample_id in sorted(stored_doc_ids):
-            print(f"  - '{sample_id}'")
+        debug_info["sample_stored_doc_ids"] = sorted(stored_doc_ids)
 
         chunks = []
         for key, chunk_data in all_chunks_dict.items():
@@ -79,9 +79,10 @@ class ChunkManager:
         # Sort by chunk order
         chunks.sort(key=lambda x: x["chunk_order_index"])
 
-        # DEBUG: Log what we found
-        print(f"DEBUG [get_chunks_by_doc_id]: Found {len(chunks)} chunks for doc_id: '{doc_id}'")
-        print(f"{'='*70}\n")
+        debug_info["found_chunks_count"] = len(chunks)
+
+        # Store debug info for UI access
+        self._last_debug_info = debug_info
 
         return chunks
 
