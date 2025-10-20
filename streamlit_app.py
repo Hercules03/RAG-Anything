@@ -129,11 +129,33 @@ async def process_single_document(
 
     # Process with default chunking
     if chunking_strategy == "default":
-        await rag.process_document_complete(
+        # Process document and get the actual LightRAG-generated doc_id
+        result = await rag.process_document_complete(
             file_path=file_path,
             output_dir=output_dir,
             parse_method="auto"
         )
+        
+        # Get the actual document ID that LightRAG generated
+        # This is needed because LightRAG generates content-based IDs
+        actual_doc_id = None
+        if hasattr(result, 'doc_id'):
+            actual_doc_id = result.doc_id
+        else:
+            # Fallback: find the document by file path
+            all_docs = await rag.lightrag.full_docs.get_all()
+            for key, doc_data in all_docs.items():
+                if doc_data and doc_data.get("file_path") == file_path:
+                    actual_doc_id = key
+                    break
+        
+        # Update metadata with the actual LightRAG doc_id
+        if actual_doc_id and actual_doc_id != doc_id:
+            metadata_store.update_document(
+                doc_id,
+                {"lightrag_doc_id": actual_doc_id}
+            )
+            print(f"Updated metadata: {doc_id} -> LightRAG ID: {actual_doc_id}")
     else:
         # Process document first to get content
         await rag.process_document_complete(
@@ -279,7 +301,8 @@ def render_sidebar():
                         st.session_state.metadata_store
                     )
                     st.session_state.chunk_manager = ChunkManager(
-                        st.session_state.rag.lightrag
+                        st.session_state.rag.lightrag,
+                        st.session_state.metadata_store
                     )
 
                     st.success("✅ RAG system initialized!")
@@ -659,7 +682,16 @@ def render_tab3_chunks():
 
     # Get chunks and statistics
     try:
+        # Try to get chunks (will use fallback if RAG system is not properly initialized)
         chunks = run_async(chunk_manager.get_chunks_by_doc_id(doc_id))
+        
+        # Show warning if RAG system is not properly initialized but chunks were found
+        if st.session_state.rag is None:
+            st.warning("⚠️ RAG system is not initialized, but chunks are available from storage files.")
+        elif not hasattr(st.session_state.rag, 'lightrag'):
+            st.warning("⚠️ RAG system is not properly initialized, but chunks are available from storage files.")
+        elif not hasattr(st.session_state.rag.lightrag, 'text_chunks'):
+            st.warning("⚠️ LightRAG text_chunks storage is not available, but chunks are available from storage files.")
 
         # Display debug information
         if hasattr(chunk_manager, '_last_debug_info'):

@@ -9,29 +9,95 @@ Provides tools to:
 """
 
 import asyncio
+import json
 from typing import List, Dict, Any, Optional
 from collections import Counter
 import statistics
+from pathlib import Path
 
 
 class ChunkManager:
     """Manage and view document chunks in LightRAG"""
 
-    def __init__(self, lightrag):
+    def __init__(self, lightrag, metadata_store=None):
         """
         Initialize ChunkManager
 
         Args:
             lightrag: LightRAG instance with initialized storages
+            metadata_store: Optional metadata store for ID mapping
         """
         self.lightrag = lightrag
+        self.metadata_store = metadata_store
+
+    def _resolve_doc_id(self, doc_id: str) -> str:
+        """
+        Resolve document ID to the actual LightRAG document ID
+        
+        Args:
+            doc_id: Metadata document ID (e.g., "doc-APP001")
+            
+        Returns:
+            Actual LightRAG document ID or original if not found
+        """
+        if not self.metadata_store:
+            return doc_id
+            
+        # Get metadata for this document
+        metadata = self.metadata_store.get_document(doc_id)
+        if metadata and metadata.get("lightrag_doc_id"):
+            return metadata["lightrag_doc_id"]
+            
+        return doc_id
+
+    def _get_chunks_from_storage_files(self, doc_id: str) -> List[Dict[str, Any]]:
+        """
+        Fallback method to get chunks directly from storage files
+        
+        Args:
+            doc_id: Document ID
+            
+        Returns:
+            List of chunk dictionaries
+        """
+        try:
+            # Resolve the document ID to the actual LightRAG ID
+            actual_doc_id = self._resolve_doc_id(doc_id)
+            
+            # Try to read chunks from storage file
+            chunks_file = Path("./rag_storage/kv_store_text_chunks.json")
+            if not chunks_file.exists():
+                return []
+                
+            with open(chunks_file, "r", encoding="utf-8") as f:
+                chunks_data = json.load(f)
+            
+            chunks = []
+            for key, chunk_data in chunks_data.items():
+                if chunk_data and chunk_data.get("full_doc_id") == actual_doc_id:
+                    chunks.append({
+                        "key": key,
+                        "tokens": chunk_data.get("tokens", 0),
+                        "content": chunk_data.get("content", ""),
+                        "full_doc_id": chunk_data.get("full_doc_id", ""),
+                        "chunk_order_index": chunk_data.get("chunk_order_index", 0),
+                    })
+            
+            # Sort by chunk order
+            chunks.sort(key=lambda x: x["chunk_order_index"])
+            
+            return chunks
+            
+        except Exception as e:
+            print(f"Error reading chunks from storage files: {e}")
+            return []
 
     async def get_chunks_by_doc_id(self, doc_id: str) -> List[Dict[str, Any]]:
         """
         Get all chunks for a specific document
 
         Args:
-            doc_id: Document ID (e.g., "doc-abc123")
+            doc_id: Document ID (e.g., "doc-APP001" or "doc-abc123")
 
         Returns:
             List of chunk dictionaries with structure:
@@ -42,16 +108,30 @@ class ChunkManager:
                 "chunk_order_index": int
             }
         """
+        # Check if LightRAG is properly initialized
+        if not self.lightrag:
+            print("Warning: LightRAG instance is None, using fallback method")
+            return self._get_chunks_from_storage_files(doc_id)
+            
         if not hasattr(self.lightrag, "text_chunks"):
-            return []
+            print("Warning: LightRAG instance does not have text_chunks attribute, using fallback method")
+            return self._get_chunks_from_storage_files(doc_id)
 
-        # Get all chunks from storage
-        # Note: LightRAG uses hash-based keys, so we need to scan all
-        all_chunks_dict = await self.lightrag.text_chunks.get_all()
+        # Resolve the document ID to the actual LightRAG ID
+        actual_doc_id = self._resolve_doc_id(doc_id)
+        
+        try:
+            # Get all chunks from storage
+            # Note: LightRAG uses hash-based keys, so we need to scan all
+            all_chunks_dict = await self.lightrag.text_chunks.get_all()
+        except Exception as e:
+            print(f"Error accessing text_chunks: {e}, using fallback method")
+            return self._get_chunks_from_storage_files(doc_id)
 
         # Collect debug info to return
         debug_info = {
             "queried_doc_id": doc_id,
+            "resolved_doc_id": actual_doc_id,
             "total_chunks_in_storage": len(all_chunks_dict),
             "sample_stored_doc_ids": []
         }
@@ -67,7 +147,7 @@ class ChunkManager:
 
         chunks = []
         for key, chunk_data in all_chunks_dict.items():
-            if chunk_data and chunk_data.get("full_doc_id") == doc_id:
+            if chunk_data and chunk_data.get("full_doc_id") == actual_doc_id:
                 chunks.append({
                     "key": key,
                     "tokens": chunk_data.get("tokens", 0),
