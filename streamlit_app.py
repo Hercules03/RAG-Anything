@@ -1130,7 +1130,7 @@ def render_tab5_chunking_test():
 
 
 def main():
-    st.title("📚 RAG-Anything Document Manager")
+    st.title("RAG-Anything Document Manager")
     st.markdown("Manage building regulations, view chunks, and chat with your documents")
 
     # Render sidebar
