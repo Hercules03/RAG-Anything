@@ -33,21 +33,60 @@ class ChunkManager:
     def _resolve_doc_id(self, doc_id: str) -> str:
         """
         Resolve document ID to the actual LightRAG document ID
-        
+
         Args:
             doc_id: Metadata document ID (e.g., "doc-APP001")
-            
+
         Returns:
             Actual LightRAG document ID or original if not found
         """
         if not self.metadata_store:
             return doc_id
-            
-        # Get metadata for this document
+
+        # Try 1: Get from metadata lightrag_doc_id field
         metadata = self.metadata_store.get_document(doc_id)
         if metadata and metadata.get("lightrag_doc_id"):
             return metadata["lightrag_doc_id"]
-            
+
+        # Try 2: Search full_docs by file path or regulation_id
+        if metadata and self.lightrag and hasattr(self.lightrag, "full_docs"):
+            try:
+                # Try synchronous file read as fallback
+                full_docs_file = Path("./rag_storage/kv_store_full_docs.json")
+                if full_docs_file.exists():
+                    with open(full_docs_file, "r", encoding="utf-8") as f:
+                        all_docs = json.load(f)
+
+                    filename = metadata.get("filename", "")
+                    regulation_id = metadata.get("regulation_id", "")
+
+                    for lightrag_doc_id, doc_data in all_docs.items():
+                        if not doc_data:
+                            continue
+
+                        # Match by file path or regulation_id
+                        doc_file_path = doc_data.get("file_path", "")
+
+                        # Check if filename matches
+                        if filename and filename in doc_file_path:
+                            print(f"Resolved {doc_id} -> {lightrag_doc_id} (by filename)")
+                            # Update metadata with the resolved ID for future use
+                            self.metadata_store.update_document(
+                                doc_id, {"lightrag_doc_id": lightrag_doc_id}
+                            )
+                            return lightrag_doc_id
+
+                        # Check if regulation_id matches
+                        if regulation_id and regulation_id in doc_file_path:
+                            print(f"Resolved {doc_id} -> {lightrag_doc_id} (by regulation_id)")
+                            self.metadata_store.update_document(
+                                doc_id, {"lightrag_doc_id": lightrag_doc_id}
+                            )
+                            return lightrag_doc_id
+
+            except Exception as e:
+                print(f"Error resolving doc_id from full_docs: {e}")
+
         return doc_id
 
     def _get_chunks_from_storage_files(self, doc_id: str) -> List[Dict[str, Any]]:
