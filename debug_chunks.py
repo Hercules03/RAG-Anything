@@ -109,4 +109,7 @@ async def check_chunks():
 
 
 if __name__ == "__main__":
-    asyncio.run(check_chunks())
+    try:
+        asyncio.run(check_chunks())
+    except Exception as e:
+        print(f"\nError: {e}")
