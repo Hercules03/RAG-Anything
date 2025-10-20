@@ -50,16 +50,29 @@ class DocumentDatabase:
         # Get metadata
         documents = self.metadata.search_documents(query=query, status=status)
 
-        # Enrich with LightRAG status
+        # Enrich with LightRAG status (check if chunks exist)
         for doc in documents:
             doc_id = doc["doc_id"]
 
-            # Get processing status from LightRAG
-            lightrag_status = await self.lightrag.doc_status.get_by_id(doc_id)
-            if lightrag_status:
-                doc["lightrag_status"] = lightrag_status.get("status", "unknown")
-            else:
-                doc["lightrag_status"] = "not_in_lightrag"
+            # Check if document has chunks in LightRAG
+            try:
+                # Get all chunk keys and filter by doc_id
+                all_chunk_keys = await self.lightrag.text_chunks.get_all_keys()
+                doc_chunks = []
+                for key in all_chunk_keys:
+                    chunk_data = await self.lightrag.text_chunks.get_by_id(key)
+                    if chunk_data and chunk_data.get("full_doc_id") == doc_id:
+                        doc_chunks.append(chunk_data)
+
+                if doc_chunks:
+                    doc["lightrag_status"] = "indexed"
+                    doc["chunk_count"] = len(doc_chunks)
+                else:
+                    doc["lightrag_status"] = "not_indexed"
+                    doc["chunk_count"] = 0
+            except Exception:
+                doc["lightrag_status"] = "unknown"
+                doc["chunk_count"] = 0
 
         return documents
 
@@ -84,23 +97,27 @@ class DocumentDatabase:
         if not metadata:
             return None
 
-        # Get LightRAG status
-        lightrag_status = await self.lightrag.doc_status.get_by_id(doc_id)
-
-        # Get chunk information
+        # Get chunk information and LightRAG status
         try:
             from .chunk_manager import ChunkManager
 
             chunk_mgr = ChunkManager(self.lightrag)
             chunks = await chunk_mgr.get_chunks_by_doc_id(doc_id)
             chunk_stats = await chunk_mgr.get_chunk_statistics(doc_id)
+
+            # Determine LightRAG status based on chunks
+            lightrag_status = {
+                "indexed": len(chunks) > 0,
+                "chunk_count": len(chunks)
+            }
         except Exception:
             chunks = []
             chunk_stats = {}
+            lightrag_status = {"indexed": False, "chunk_count": 0}
 
         return {
             "metadata": metadata,
-            "lightrag_status": lightrag_status or {},
+            "lightrag_status": lightrag_status,
             "chunk_count": len(chunks),
             "chunk_stats": chunk_stats,
         }
@@ -136,8 +153,7 @@ class DocumentDatabase:
                 # Delete document
                 await self.lightrag.full_docs.delete_by_id(doc_id)
 
-                # Delete doc_status
-                await self.lightrag.doc_status.delete_by_id(doc_id)
+                # Note: LightRAG doesn't have doc_status, only text_chunks and full_docs
 
                 print(f"Successfully deleted {doc_id} from LightRAG storage")
 
@@ -328,11 +344,18 @@ class DocumentDatabase:
 
         # Get LightRAG storage statistics
         try:
-            all_docs = await self.lightrag.doc_status.get_all_keys()
+            # Count chunks in LightRAG (no doc_status attribute in LightRAG)
             all_chunks = await self.lightrag.text_chunks.get_all_keys()
 
+            # Count unique documents from chunks
+            unique_doc_ids = set()
+            for chunk_key in all_chunks:
+                chunk_data = await self.lightrag.text_chunks.get_by_id(chunk_key)
+                if chunk_data and chunk_data.get("full_doc_id"):
+                    unique_doc_ids.add(chunk_data["full_doc_id"])
+
             lightrag_stats = {
-                "total_docs_in_lightrag": len(all_docs),
+                "total_docs_in_lightrag": len(unique_doc_ids),
                 "total_chunks_in_lightrag": len(all_chunks),
             }
         except Exception:
@@ -401,8 +424,16 @@ class DocumentDatabase:
         # Get all documents from metadata
         metadata_docs = {doc["doc_id"] for doc in self.metadata.get_all_documents()}
 
-        # Get all documents from LightRAG
-        lightrag_docs = set(await self.lightrag.doc_status.get_all_keys())
+        # Get all documents from LightRAG (by scanning chunks)
+        try:
+            all_chunk_keys = await self.lightrag.text_chunks.get_all_keys()
+            lightrag_docs = set()
+            for key in all_chunk_keys:
+                chunk_data = await self.lightrag.text_chunks.get_by_id(key)
+                if chunk_data and chunk_data.get("full_doc_id"):
+                    lightrag_docs.add(chunk_data["full_doc_id"])
+        except Exception:
+            lightrag_docs = set()
 
         # Check for orphaned metadata
         orphaned_metadata = metadata_docs - lightrag_docs
