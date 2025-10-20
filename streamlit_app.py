@@ -655,6 +655,9 @@ def render_tab3_chunks():
     selected_doc = st.selectbox("Select Document", list(doc_options.keys()))
     doc_id = doc_options[selected_doc]
 
+    # DEBUG: Show what doc_id we're querying
+    st.info(f"🔍 DEBUG: Querying chunks for doc_id: `{doc_id}`")
+
     st.divider()
 
     # Get chunks and statistics
