@@ -53,25 +53,42 @@ class ChunkManager:
     def _get_chunks_from_storage_files(self, doc_id: str) -> List[Dict[str, Any]]:
         """
         Fallback method to get chunks directly from storage files
-        
+
         Args:
             doc_id: Document ID
-            
+
         Returns:
             List of chunk dictionaries
         """
         try:
             # Resolve the document ID to the actual LightRAG ID
             actual_doc_id = self._resolve_doc_id(doc_id)
-            
+
             # Try to read chunks from storage file
             chunks_file = Path("./rag_storage/kv_store_text_chunks.json")
             if not chunks_file.exists():
+                # Store debug info
+                self._last_debug_info = {
+                    "queried_doc_id": doc_id,
+                    "resolved_doc_id": actual_doc_id,
+                    "total_chunks_in_storage": 0,
+                    "sample_stored_doc_ids": [],
+                    "found_chunks_count": 0,
+                    "method": "fallback - storage file not found"
+                }
                 return []
-                
+
             with open(chunks_file, "r", encoding="utf-8") as f:
                 chunks_data = json.load(f)
-            
+
+            # Collect debug info
+            stored_doc_ids = set()
+            for key, chunk_data in chunks_data.items():
+                if chunk_data and chunk_data.get("full_doc_id"):
+                    stored_doc_ids.add(chunk_data.get("full_doc_id"))
+                    if len(stored_doc_ids) >= 10:
+                        break
+
             chunks = []
             for key, chunk_data in chunks_data.items():
                 if chunk_data and chunk_data.get("full_doc_id") == actual_doc_id:
@@ -82,14 +99,33 @@ class ChunkManager:
                         "full_doc_id": chunk_data.get("full_doc_id", ""),
                         "chunk_order_index": chunk_data.get("chunk_order_index", 0),
                     })
-            
+
             # Sort by chunk order
             chunks.sort(key=lambda x: x["chunk_order_index"])
-            
+
+            # Store debug info
+            self._last_debug_info = {
+                "queried_doc_id": doc_id,
+                "resolved_doc_id": actual_doc_id,
+                "total_chunks_in_storage": len(chunks_data),
+                "sample_stored_doc_ids": sorted(stored_doc_ids),
+                "found_chunks_count": len(chunks),
+                "method": "fallback - direct file read"
+            }
+
             return chunks
-            
+
         except Exception as e:
             print(f"Error reading chunks from storage files: {e}")
+            # Store debug info for error case
+            self._last_debug_info = {
+                "queried_doc_id": doc_id,
+                "resolved_doc_id": "error",
+                "total_chunks_in_storage": 0,
+                "sample_stored_doc_ids": [],
+                "found_chunks_count": 0,
+                "method": f"fallback - error: {str(e)}"
+            }
             return []
 
     async def get_chunks_by_doc_id(self, doc_id: str) -> List[Dict[str, Any]]:
@@ -133,7 +169,8 @@ class ChunkManager:
             "queried_doc_id": doc_id,
             "resolved_doc_id": actual_doc_id,
             "total_chunks_in_storage": len(all_chunks_dict),
-            "sample_stored_doc_ids": []
+            "sample_stored_doc_ids": [],
+            "method": "async - LightRAG API"
         }
 
         # Get sample of stored doc_ids (first 10 unique)

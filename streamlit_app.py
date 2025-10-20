@@ -699,13 +699,24 @@ def render_tab3_chunks():
 
             st.warning("🔍 **DEBUG INFORMATION**")
 
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             with col1:
-                st.metric("Queried Doc ID", debug_info.get("queried_doc_id", "N/A"))
+                st.metric("Queried Doc ID (from metadata)", debug_info.get("queried_doc_id", "N/A"))
             with col2:
-                st.metric("Total Chunks in Storage", debug_info.get("total_chunks_in_storage", 0))
+                st.metric("Resolved Doc ID (actual LightRAG ID)", debug_info.get("resolved_doc_id", "N/A"))
+
+            col3, col4 = st.columns(2)
             with col3:
+                st.metric("Total Chunks in Storage", debug_info.get("total_chunks_in_storage", 0))
+            with col4:
                 st.metric("Chunks Found", debug_info.get("found_chunks_count", 0))
+
+            # Show method used
+            method = debug_info.get("method", "unknown")
+            if "fallback" in method:
+                st.info(f"📁 **Retrieval Method:** {method}")
+            else:
+                st.success(f"✅ **Retrieval Method:** {method}")
 
             st.write("**Sample of Stored Doc IDs (first 10):**")
             sample_ids = debug_info.get("sample_stored_doc_ids", [])
